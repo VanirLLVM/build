@@ -123,6 +123,9 @@ PRODUCT_PACKAGES := \
     x264 \
     aibd \
     aib
+<<<<<<< HEAD
+>>>>>>> 750d04b... target/product/core.mk: Add aibd and aib to PRODUCT_PACKAGES.
+=======
 >>>>>>> 750d04b... target/product/core.mk: Add aibd and aib to PRODUCT_PACKAGES.
 
 PRODUCT_COPY_FILES += \
