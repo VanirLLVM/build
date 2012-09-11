@@ -115,18 +115,12 @@ PRODUCT_PACKAGES := \
     screencap \
     sensorservice \
     lint \
-<<<<<<< HEAD
-    uiautomator
-=======
     uiautomator \
     wpa_supplicant.conf \
     x264 \
     aibd \
     aib
-<<<<<<< HEAD
->>>>>>> 750d04b... target/product/core.mk: Add aibd and aib to PRODUCT_PACKAGES.
-=======
->>>>>>> 750d04b... target/product/core.mk: Add aibd and aib to PRODUCT_PACKAGES.
+
 
 PRODUCT_COPY_FILES += \
     system/core/rootdir/init.usb.rc:root/init.usb.rc \
