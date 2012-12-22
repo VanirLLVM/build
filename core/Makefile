@@ -1194,7 +1194,7 @@ ifneq ($(TARGET_CUSTOM_RELEASETOOL),)
 	$(hide) $(TARGET_CUSTOM_RELEASETOOL)
 else
 	@echo -e ${CL_YLW}"Running releasetool..."${CL_RST}
-	$(hide) ./vendor/vanir/tools/squisher
+	$(hide) ./vendor/$(DHO_VENDOR)/tools/squisher
 endif
 
 # -----------------------------------------------------------------
