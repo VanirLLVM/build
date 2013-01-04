@@ -27,6 +27,11 @@ EOF
     echo $A
 }
 
+read -p "This branch is dead. Do you want to be automagically switched to the correct manifest <Y/n>? " autoinit
+case $autoinit in [Nn]) noop=1;;
+                    *) repo init -b jb42; source build/envsetup.sh; exit 0;;
+esac
+
 # Get the value of a build variable as an absolute path.
 function get_abs_build_var()
 {
