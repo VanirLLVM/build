@@ -78,6 +78,8 @@ PRODUCT_PACKAGES += \
 
 # linaro dependencies
 PRODUCT_PACKAGES += \
+    aib \
+    aibd \
     busybox \
     ffmpeg \
     lrzsz \
