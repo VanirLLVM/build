@@ -22,9 +22,9 @@
 
 LOCAL_IS_HOST_MODULE := $(call true-or-empty,$(LOCAL_IS_HOST_MODULE))
 ifeq ($(LOCAL_IS_HOST_MODULE),true)
-my_prefix:=HOST_
+my_prefix := HOST_
 else
-my_prefix:=TARGET_
+my_prefix := TARGET_
 endif
 
 LOCAL_MODULE_CLASS := $(strip $(LOCAL_MODULE_CLASS))
@@ -51,8 +51,6 @@ ifeq ($(LOCAL_DROIDDOC_CUSTOM_ASSET_DIR),)
 LOCAL_DROIDDOC_CUSTOM_ASSET_DIR := assets
 endif
 
-$(full_target): PRIVATE_CLASSPATH:=$(LOCAL_CLASSPATH)
-full_java_lib_deps :=
 
 $(full_target): PRIVATE_BOOTCLASSPATH :=
 ifeq ($(BUILD_OS),linux)
@@ -75,19 +73,13 @@ else
 endif  # LOCAL_SDK_VERSION
 LOCAL_JAVA_LIBRARIES := $(sort $(LOCAL_JAVA_LIBRARIES))
 
-full_java_libs := $(call java-lib-files,$(LOCAL_JAVA_LIBRARIES),$(LOCAL_IS_HOST_MODULE))
-full_java_lib_deps := $(call java-lib-deps,$(LOCAL_JAVA_LIBRARIES),$(LOCAL_IS_HOST_MODULE))
+endif # !LOCAL_IS_HOST_MODULE
 
-# we're not going to generate docs from any of these classes, but we need them
-# to build properly.
-ifneq ($(strip $(LOCAL_STATIC_JAVA_LIBRARIES)),)
-full_java_libs += $(addprefix $(LOCAL_PATH)/,$(LOCAL_STATIC_JAVA_LIBRARIES)) $(LOCAL_CLASSPATH)
-full_java_lib_deps += $(addprefix $(LOCAL_PATH)/,$(LOCAL_STATIC_JAVA_LIBRARIES)) $(LOCAL_CLASSPATH)
-endif
+full_java_libs := $(call java-lib-files,$(LOCAL_JAVA_LIBRARIES),$(LOCAL_IS_HOST_MODULE)) $(LOCAL_CLASSPATH)
+full_java_lib_deps := $(call java-lib-deps,$(LOCAL_JAVA_LIBRARIES),$(LOCAL_IS_HOST_MODULE)) $(LOCAL_CLASSPATH)
 
 $(full_target): PRIVATE_CLASSPATH := $(subst $(space),:,$(full_java_libs))
 
-endif # !LOCAL_IS_HOST_MODULE
 
 intermediates.COMMON := $(call local-intermediates-dir,COMMON)
 
@@ -152,6 +144,11 @@ $(full_target): PRIVATE_ADDITIONAL_HTML_DIR := -htmldir2 $(LOCAL_PATH)/$(LOCAL_A
 else
 $(full_target): PRIVATE_ADDITIONAL_HTML_DIR :=
 endif
+ifneq ($(strip $(LOCAL_ADDITIONAL_HTML_DIR)),)
+$(full_target): PRIVATE_ADDITIONAL_HTML_DIR := -htmldir2 $(LOCAL_PATH)/$(LOCAL_ADDITIONAL_HTML_DIR)
+else
+$(full_target): PRIVATE_ADDITIONAL_HTML_DIR :=
+endif
 
 # TODO: not clear if this is used any more
 $(full_target): PRIVATE_LOCAL_PATH := $(LOCAL_PATH)
@@ -164,6 +161,9 @@ $(full_target): $(full_src_files) $(droiddoc_templates) $(droiddoc) $(html_dir_f
 	$(call prepare-doc-source-list,$(PRIVATE_SRC_LIST_FILE),$(PRIVATE_JAVA_FILES), \
 			$(PRIVATE_SOURCE_INTERMEDIATES_DIR) $(PRIVATE_ADDITIONAL_JAVA_DIR))
 	$(hide) ( \
+		head -1 $(PRIVATE_SRC_LIST_FILE) | tr " " "\n" | sort | uniq | tr "\n" " " > $(PRIVATE_SRC_LIST_FILE)_temp; \
+		cat $(PRIVATE_SRC_LIST_FILE) | sed '1 d' >> $(PRIVATE_SRC_LIST_FILE)_temp; \
+		mv $(PRIVATE_SRC_LIST_FILE)_temp $(PRIVATE_SRC_LIST_FILE); \
 		javadoc \
                 \@$(PRIVATE_SRC_LIST_FILE) \
                 -J-Xmx1280m \
@@ -197,6 +197,9 @@ $(full_target): $(full_src_files) $(full_java_lib_deps)
 	$(call prepare-doc-source-list,$(PRIVATE_SRC_LIST_FILE),$(PRIVATE_JAVA_FILES), \
 			$(PRIVATE_SOURCE_INTERMEDIATES_DIR) $(PRIVATE_ADDITIONAL_JAVA_DIR))
 	$(hide) ( \
+		head -1 $(PRIVATE_SRC_LIST_FILE) | tr " " "\n" | sort | uniq | tr "\n" " " > $(PRIVATE_SRC_LIST_FILE)_temp; \
+		cat $(PRIVATE_SRC_LIST_FILE) | sed '1 d' >> $(PRIVATE_SRC_LIST_FILE)_temp; \
+		mv $(PRIVATE_SRC_LIST_FILE)_temp $(PRIVATE_SRC_LIST_FILE); \
 		javadoc \
                 $(PRIVATE_DROIDDOC_OPTIONS) \
                 \@$(PRIVATE_SRC_LIST_FILE) \

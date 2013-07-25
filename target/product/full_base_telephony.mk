@@ -21,8 +21,7 @@
 
 
 PRODUCT_PROPERTY_OVERRIDES := \
-    keyguard.no_require_sim=true \
-    ro.com.android.dataroaming=false
+    keyguard.no_require_sim=true
 
-$(call inherit-product, $(SRC_TARGET_DIR)/product/full_base.mk)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/aosp_base.mk)
 $(call inherit-product, $(SRC_TARGET_DIR)/product/telephony.mk)

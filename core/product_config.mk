@@ -82,7 +82,7 @@ endef
 # These are the valid values of TARGET_BUILD_VARIANT.  Also, if anything else is passed
 # as the variant in the PRODUCT-$TARGET_BUILD_PRODUCT-$TARGET_BUILD_VARIANT form,
 # it will be treated as a goal, and the eng variant will be used.
-INTERNAL_VALID_VARIANTS := user userdebug eng tests
+INTERNAL_VALID_VARIANTS := user userdebug eng
 
 # ---------------------------------------------------------------
 # Provide "PRODUCT-<prodname>-<goal>" targets, which lets you build
@@ -109,6 +109,10 @@ ifdef product_goals
   # The variant they want
   TARGET_BUILD_VARIANT := $(word 2,$(product_goals))
 
+  ifeq ($(TARGET_BUILD_VARIANT),tests)
+    $(error "tests" has been deprecated as a build variant. Use it as a build goal instead.)
+  endif
+
   # The build server wants to do make PRODUCT-dream-installclean
   # which really means TARGET_PRODUCT=dream make installclean.
   ifneq ($(filter-out $(INTERNAL_VALID_VARIANTS),$(TARGET_BUILD_VARIANT)),)
@@ -117,11 +121,6 @@ ifdef product_goals
     default_goal_substitution :=
   else
     default_goal_substitution := $(DEFAULT_GOAL)
-  endif
-
-  # For tests build, only build tests-build-target
-  ifeq (tests,$(TARGET_BUILD_VARIANT))
-    default_goal_substitution := tests-build-target
   endif
 
   # Replace the PRODUCT-* goal with the build goal that it refers to.
@@ -185,11 +184,16 @@ ifneq ($(strip $(TARGET_BUILD_APPS)),)
 all_product_configs := $(call get-product-makefiles,\
     $(SRC_TARGET_DIR)/product/AndroidProducts.mk)
 else
-# Read in all of the product definitions specified by the AndroidProducts.mk
-# files in the tree.
-all_product_configs := $(get-all-product-makefiles)
+  ifneq ($(CM_BUILD),)
+    all_product_configs := $(shell ls device/*/$(CM_BUILD)/cm.mk)
+  else
+    # Read in all of the product definitions specified by the AndroidProducts.mk
+    # files in the tree.
+    all_product_configs := $(get-all-product-makefiles)
+  endif # CM_BUILD
 endif
 
+ifeq ($(CM_BUILD),)
 # Find the product config makefile for the current product.
 # all_product_configs consists items like:
 # <product_name>:<path_to_the_product_makefile>
@@ -208,11 +212,17 @@ $(foreach f, $(all_product_configs),\
         $(eval all_product_makefiles += $(f))\
         $(if $(filter $(TARGET_PRODUCT),$(basename $(notdir $(f)))),\
             $(eval current_product_makefile += $(f)),)))
+
 _cpm_words :=
 _cpm_word1 :=
 _cpm_word2 :=
+else
+    current_product_makefile := $(strip $(all_product_configs))
+    all_product_makefiles := $(strip $(all_product_configs))
+endif
 current_product_makefile := $(strip $(current_product_makefile))
 all_product_makefiles := $(strip $(all_product_makefiles))
+
 
 ifneq (,$(filter product-graph dump-products, $(MAKECMDGOALS)))
 # Import all product makefiles.
@@ -341,7 +351,7 @@ PRODUCT_DEFAULT_PROPERTY_OVERRIDES := \
     $(strip $(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_DEFAULT_PROPERTY_OVERRIDES))
 
 PRODUCT_BUILD_PROP_OVERRIDES := \
-    $(strip $(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_BUILD_PROP_OVERRIDES))
+	$(strip $(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_BUILD_PROP_OVERRIDES))
 
 # Should we use the default resources or add any product specific overlays
 PRODUCT_PACKAGE_OVERLAYS := \

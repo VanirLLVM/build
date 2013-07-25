@@ -2,14 +2,17 @@ function hmm() {
 cat <<EOF
 Invoke ". build/envsetup.sh" from your shell to add the following functions to your environment:
 - lunch:   lunch <product_name>-<build_variant>
-- tapas:   tapas [<App1> <App2> ...] [arm|x86|mips] [eng|userdebug|user]
+- tapas:   tapas [<App1> <App2> ...] [arm|x86|mips|armv5] [eng|userdebug|user]
 - croot:   Changes directory to the top of the tree.
+- cout:    Changes directory to out.
 - m:       Makes from the top of the tree.
 - mm:      Builds all of the modules in the current directory.
 - mmp:     Builds all of the modules in the current directory and pushes them to the device.
 - mmm:     Builds all of the modules in the supplied directories.
 - mmmp:    Builds all of the modules in the supplied directories and pushes them to the device.
 - mgrep:   Greps on all local .mk files.
+- mma:     Builds all of the modules in the current directory, and their dependencies.
+- mmma:    Builds all of the modules in the supplied directories, and their dependencies.
 - cgrep:   Greps on all local C/C++ files.
 - jgrep:   Greps on all local Java files.
 - resgrep: Greps on all local res/*.xml files.
@@ -238,8 +241,6 @@ function set_stuff_for_environment()
     set_java_home
     setpaths
     set_sequence_number
-
-    export ANDROID_BUILD_TOP=$(gettop)
 }
 
 function set_sequence_number()
@@ -254,35 +255,52 @@ function settitle()
         local product=$TARGET_PRODUCT
         local variant=$TARGET_BUILD_VARIANT
         local apps=$TARGET_BUILD_APPS
+        if [ -z "$PROMPT_COMMAND"  ]; then
+            # No prompts
+            PROMPT_COMMAND="echo -ne \"\033]0;${USER}@${HOSTNAME}: ${PWD}\007\""
+        elif [ -z "$(echo $PROMPT_COMMAND | grep '033]0;')" ]; then
+            # Prompts exist, but no hardstatus
+            PROMPT_COMMAND="echo -ne \"\033]0;${USER}@${HOSTNAME}: ${PWD}\007\";${PROMPT_COMMAND}"
+        fi
+        if [ ! -z "$ANDROID_PROMPT_PREFIX" ]; then
+            PROMPT_COMMAND="$(echo $PROMPT_COMMAND | sed -e 's/$ANDROID_PROMPT_PREFIX //g')"
+        fi
+
         if [ -z "$apps" ]; then
-            export PROMPT_COMMAND="echo -ne \"\033]0;[${arch}-${product}-${variant}] ${USER}@${HOSTNAME}: ${PWD}\007\""
+            ANDROID_PROMPT_PREFIX="[${arch}-${product}-${variant}]"
         else
             export PROMPT_COMMAND="echo -ne \"\033]0;[$arch $apps $variant] ${USER}@${HOSTNAME}: ${PWD}\007\"" 
         fi
+        export ANDROID_PROMPT_PREFIX
+
+        # Inject build data into hardstatus
+        export PROMPT_COMMAND="$(echo $PROMPT_COMMAND | sed -e 's/\\033]0;\(.*\)\\007/\\033]0;$ANDROID_PROMPT_PREFIX \1\\007/g')"
     fi
 }
 
 function addcompletions()
 {
-    local T dir f
-
     # Keep us from trying to run in something that isn't bash.
     if [ -z "${BASH_VERSION}" ]; then
         return
     fi
 
     # Keep us from trying to run in bash that's too old.
-    if [ ${BASH_VERSINFO[0]} -lt 3 ]; then
+    if [ "${BASH_VERSINFO[0]}" -lt 4 ] ; then
         return
     fi
 
-    dir="sdk/bash_completion"
+    local T dir f
+
+    dirs="sdk/bash_completion vendor/cm/bash_completion"
+    for dir in $dirs; do
     if [ -d ${dir} ]; then
         for f in `/bin/ls ${dir}/[a-z]*.bash 2> /dev/null`; do
             echo "including $f"
             . $f
         done
     fi
+    done
 }
 
 function choosetype()
@@ -461,10 +479,10 @@ function add_lunch_combo()
 }
 
 # add the default one here
-add_lunch_combo full-eng
-add_lunch_combo full_x86-eng
+add_lunch_combo aosp_arm-eng
+add_lunch_combo aosp_x86-eng
+add_lunch_combo aosp_mips-eng
 add_lunch_combo vbox_x86-eng
-add_lunch_combo full_mips-eng
 
 function print_lunch_menu()
 {
@@ -472,7 +490,6 @@ function print_lunch_menu()
     echo
     echo "You're building on" $uname
     echo
-    echo "Lunch menu... pick a combo:"
 
     local i=1
     local choice
@@ -493,7 +510,7 @@ function lunch()
         answer=$1
     else
         print_lunch_menu
-        echo -n "Which would you like? [full-eng] "
+        echo -n "Which would you like? [aosp_arm-eng] "
         read answer
     fi
 
@@ -501,7 +518,7 @@ function lunch()
 
     if [ -z "$answer" ]
     then
-        selection=full-eng
+        selection=aosp_arm-eng
     elif (echo -n $answer | grep -q -e "^[0-9][0-9]*$")
     then
         if [ $answer -le ${#LUNCH_MENU_CHOICES[@]} ]
@@ -577,9 +594,9 @@ complete -F _lunch lunch
 # Run tapas with one ore more app names (from LOCAL_PACKAGE_NAME)
 function tapas()
 {
-    local arch=$(echo -n $(echo $* | xargs -n 1 echo | \grep -E '^(arm|x86|mips)$'))
+    local arch=$(echo -n $(echo $* | xargs -n 1 echo | \grep -E '^(arm|x86|mips|armv5)$'))
     local variant=$(echo -n $(echo $* | xargs -n 1 echo | \grep -E '^(user|userdebug|eng)$'))
-    local apps=$(echo -n $(echo $* | xargs -n 1 echo | \grep -E -v '^(user|userdebug|eng|arm|x86|mips)$'))
+    local apps=$(echo -n $(echo $* | xargs -n 1 echo | \grep -E -v '^(user|userdebug|eng|arm|x86|mips|armv5)$'))
 
     if [ $(echo $arch | wc -w) -gt 1 ]; then
         echo "tapas: Error: Multiple build archs supplied: $arch"
@@ -594,6 +611,7 @@ function tapas()
     case $arch in
       x86)   product=full_x86;;
       mips)  product=full_mips;;
+      armv5) product=generic_armv5;;
     esac
     if [ -z "$variant" ]; then
         variant=eng
@@ -641,7 +659,7 @@ function m()
 {
     T=$(gettop)
     if [ "$T" ]; then
-        make -C $T $@
+        make -C $T -f build/core/main.mk $@
     else
         echo "Couldn't locate the top of the tree.  Try setting TOP."
     fi
@@ -666,10 +684,17 @@ function findmakefile()
 
 function mm()
 {
+    local MM_MAKE=make
+    local ARG=
+    for ARG in $@ ; do
+        if [ "$ARG" = mka ]; then
+            MM_MAKE=mka
+        fi
+    done
     # If we're sitting in the root of the build tree, just do a
     # normal make.
     if [ -f build/core/envsetup.mk -a -f Makefile ]; then
-        make $@
+        $MM_MAKE $@
     else
         # Find the closest Android.mk file.
         T=$(gettop)
@@ -681,13 +706,14 @@ function mm()
         elif [ ! "$M" ]; then
             echo "Couldn't locate a makefile from the current directory."
         else
-            ONE_SHOT_MAKEFILE=$M make -C $T all_modules $@
+            ONE_SHOT_MAKEFILE=$M $MM_MAKE -C $T -f build/core/main.mk all_modules $@
         fi
     fi
 }
 
 function mmm()
 {
+    local MMM_MAKE=make
     T=$(gettop)
     if [ "$T" ]; then
         local MAKEFILE=
@@ -722,16 +748,67 @@ function mmm()
                     ARGS="$ARGS dist"
                 elif [ "$DIR" = incrementaljavac ]; then
                     ARGS="$ARGS incrementaljavac"
+                elif [ "$DIR" = mka ]; then
+                    MMM_MAKE=mka
                 else
                     echo "No Android.mk in $DIR."
                     return 1
                 fi
             fi
         done
-        ONE_SHOT_MAKEFILE="$MAKEFILE" make -C $T $DASH_ARGS $MODULES $ARGS
+        ONE_SHOT_MAKEFILE="$MAKEFILE" $MMM_MAKE -C $T -f build/core/main.mk $DASH_ARGS $MODULES $ARGS
     else
         echo "Couldn't locate the top of the tree.  Try setting TOP."
     fi
+}
+
+function mma()
+{
+  if [ -f build/core/envsetup.mk -a -f Makefile ]; then
+    make $@
+  else
+    T=$(gettop)
+    if [ ! "$T" ]; then
+      echo "Couldn't locate the top of the tree.  Try setting TOP."
+    fi
+    local MY_PWD=`PWD= /bin/pwd|sed 's:'$T'/::'`
+    make -C $T -f build/core/main.mk $@ all_modules BUILD_MODULES_IN_PATHS="$MY_PWD"
+  fi
+}
+
+function mmma()
+{
+  T=$(gettop)
+  if [ "$T" ]; then
+    local DASH_ARGS=$(echo "$@" | awk -v RS=" " -v ORS=" " '/^-.*$/')
+    local DIRS=$(echo "$@" | awk -v RS=" " -v ORS=" " '/^[^-].*$/')
+    local MY_PWD=`PWD= /bin/pwd`
+    if [ "$MY_PWD" = "$T" ]; then
+      MY_PWD=
+    else
+      MY_PWD=`echo $MY_PWD|sed 's:'$T'/::'`
+    fi
+    local DIR=
+    local MODULE_PATHS=
+    local ARGS=
+    for DIR in $DIRS ; do
+      if [ -d $DIR ]; then
+        if [ "$MY_PWD" = "" ]; then
+          MODULE_PATHS="$MODULE_PATHS $DIR"
+        else
+          MODULE_PATHS="$MODULE_PATHS $MY_PWD/$DIR"
+        fi
+      else
+        case $DIR in
+          showcommands | snod | dist | incrementaljavac) ARGS="$ARGS $DIR";;
+          *) echo "Couldn't find directory $DIR"; return 1;;
+        esac
+      fi
+    done
+    make -C $T -f build/core/main.mk $DASH_ARGS $ARGS all_modules BUILD_MODULES_IN_PATHS="$MODULE_PATHS"
+  else
+    echo "Couldn't locate the top of the tree.  Try setting TOP."
+  fi
 }
 
 function croot()
@@ -741,6 +818,15 @@ function croot()
         \cd $(gettop)
     else
         echo "Couldn't locate the top of the tree.  Try setting TOP."
+    fi
+}
+
+function cout()
+{
+    if [  "$OUT" ]; then
+        cd $OUT
+    else
+        echo "Couldn't locate out directory.  Try setting OUT."
     fi
 }
 
@@ -848,13 +934,24 @@ function gdbclient()
            PORT=":5039"
        fi
 
-       local PID
-       local PROG="$3"
-       if [ "$PROG" ] ; then
-           if [[ "$PROG" =~ ^[0-9]+$ ]] ; then
-               PID="$3"
-           else
+       local PID="$3"
+       if [ "$PID" ] ; then
+           if [[ ! "$PID" =~ ^[0-9]+$ ]] ; then
                PID=`pid $3`
+               if [[ ! "$PID" =~ ^[0-9]+$ ]] ; then
+                   # that likely didn't work because of returning multiple processes
+                   # try again, filtering by root processes (don't contain colon)
+                   PID=`adb shell ps | grep $3 | grep -v ":" | awk '{print $2}'`
+                   if [[ ! "$PID" =~ ^[0-9]+$ ]]
+                   then
+                       echo "Couldn't resolve '$3' to single PID"
+                       return 1
+                   else
+                       echo ""
+                       echo "WARNING: multiple processes matching '$3' observed, using root process"
+                       echo ""
+                   fi
+               fi
            fi
            adb forward "tcp$PORT" "tcp$PORT"
            adb shell gdbserver $PORT --attach $PID &
@@ -864,7 +961,7 @@ function gdbclient()
                echo "If you haven't done so already, do this first on the device:"
                echo "    gdbserver $PORT /system/bin/$EXE"
                    echo " or"
-               echo "    gdbserver $PORT --attach $PID"
+               echo "    gdbserver $PORT --attach <PID>"
                echo ""
        fi
 
@@ -1502,6 +1599,19 @@ function set_java_home() {
     fi
 }
 
+# Print colored exit condition
+function pez {
+    "$@"
+    local retval=$?
+    if [ $retval -ne 0 ]
+    then
+        echo -e "\e[0;31mFAILURE\e[00m"
+    else
+        echo -e "\e[0;32mSUCCESS\e[00m"
+    fi
+    return $retval
+}
+
 if [ "x$SHELL" != "x/bin/bash" ]; then
     case `ps -o command -p $$` in
         *bash*)
@@ -1514,6 +1624,7 @@ fi
 
 # Execute the contents of any vendorsetup.sh files we can find.
 for f in `/bin/ls vendor/*/vendorsetup.sh vendor/*/*/vendorsetup.sh device/*/*/vendorsetup.sh 2> /dev/null`
+
 do
     echo "including $f"
     . $f
@@ -1529,3 +1640,4 @@ source $(gettop)/build/nukehawtness
 if [ `typeset -F | grep _git | wc -l` -eq 0 ]; then
     source $(gettop)/build/git-completion.bash
 fi
+export ANDROID_BUILD_TOP=$(gettop)
