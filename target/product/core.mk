@@ -76,6 +76,14 @@ PRODUCT_PACKAGES += \
     telephony-common \
     voip-common
 
+# linaro dependencies
+PRODUCT_PACKAGES += \
+    busybox \
+    ffmpeg \
+    lrzsz \
+    wpa_supplicant.conf \
+    x264
+
 # host-only dependencies
 ifeq ($(WITH_HOST_DALVIK),true)
     PRODUCT_PACKAGES += \
