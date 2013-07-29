@@ -4,6 +4,7 @@ Invoke ". build/envsetup.sh" from your shell to add the following functions to y
 - lunch:   lunch <product_name>-<build_variant>
 - tapas:   tapas [<App1> <App2> ...] [arm|x86|mips|armv5] [eng|userdebug|user]
 - croot:   Changes directory to the top of the tree.
+- cout:    Changes directory to out.
 - m:       Makes from the top of the tree.
 - mm:      Builds all of the modules in the current directory.
 - mmp:     Builds all of the modules in the current directory and pushes them to the device.
@@ -88,6 +89,14 @@ function check_product()
         echo "Couldn't locate the top of the tree.  Try setting TOP." >&2
         return
     fi
+
+    if (echo -n $1 | grep -q -e "^cm_") ; then
+       CM_BUILD=$(echo -n $1 | sed -e 's/^cm_//g')
+    else
+       CM_BUILD=
+    fi
+    export CM_BUILD
+
     CALLED_FROM_SETUP=true BUILD_SYSTEM=build/core \
         TARGET_PRODUCT=$1 \
         TARGET_BUILD_VARIANT= \
@@ -236,8 +245,6 @@ function set_stuff_for_environment()
     set_java_home
     setpaths
     set_sequence_number
-
-    export ANDROID_BUILD_TOP=$(gettop)
 }
 
 function set_sequence_number()
@@ -252,35 +259,52 @@ function settitle()
         local product=$TARGET_PRODUCT
         local variant=$TARGET_BUILD_VARIANT
         local apps=$TARGET_BUILD_APPS
-        if [ -z "$apps" ]; then
-            export PROMPT_COMMAND="echo -ne \"\033]0;[${arch}-${product}-${variant}] ${USER}@${HOSTNAME}: ${PWD}\007\""
-        else
-            export PROMPT_COMMAND="echo -ne \"\033]0;[$arch $apps $variant] ${USER}@${HOSTNAME}: ${PWD}\007\"" 
+        if [ -z "$PROMPT_COMMAND"  ]; then
+            # No prompts
+            PROMPT_COMMAND="echo -ne \"\033]0;${USER}@${HOSTNAME}: ${PWD}\007\""
+        elif [ -z "$(echo $PROMPT_COMMAND | grep '033]0;')" ]; then
+            # Prompts exist, but no hardstatus
+            PROMPT_COMMAND="echo -ne \"\033]0;${USER}@${HOSTNAME}: ${PWD}\007\";${PROMPT_COMMAND}"
         fi
+        if [ ! -z "$ANDROID_PROMPT_PREFIX" ]; then
+            PROMPT_COMMAND="$(echo $PROMPT_COMMAND | sed -e 's/$ANDROID_PROMPT_PREFIX //g')"
+        fi
+
+        if [ -z "$apps" ]; then
+            ANDROID_PROMPT_PREFIX="[${arch}-${product}-${variant}]"
+        else
+            ANDROID_PROMPT_PREFIX="[$arch $apps $variant]"
+        fi
+        export ANDROID_PROMPT_PREFIX
+
+        # Inject build data into hardstatus
+        export PROMPT_COMMAND="$(echo $PROMPT_COMMAND | sed -e 's/\\033]0;\(.*\)\\007/\\033]0;$ANDROID_PROMPT_PREFIX \1\\007/g')"
     fi
 }
 
 function addcompletions()
 {
-    local T dir f
-
     # Keep us from trying to run in something that isn't bash.
     if [ -z "${BASH_VERSION}" ]; then
         return
     fi
 
     # Keep us from trying to run in bash that's too old.
-    if [ ${BASH_VERSINFO[0]} -lt 3 ]; then
+    if [ "${BASH_VERSINFO[0]}" -lt 4 ] ; then
         return
     fi
 
-    dir="sdk/bash_completion"
+    local T dir f
+
+    dirs="sdk/bash_completion vendor/cm/bash_completion"
+    for dir in $dirs; do
     if [ -d ${dir} ]; then
         for f in `/bin/ls ${dir}/[a-z]*.bash 2> /dev/null`; do
             echo "including $f"
             . $f
         done
     fi
+    done
 }
 
 function choosetype()
@@ -469,8 +493,15 @@ function print_lunch_menu()
     local uname=$(uname)
     echo
     echo "You're building on" $uname
+    if [ "$(uname)" = "Darwin" ] ; then
+       echo "  (ohai, koush!)"
+    fi
     echo
-    echo "Lunch menu... pick a combo:"
+    if [ "z${CM_DEVICES_ONLY}" != "z" ]; then
+       echo "Breakfast menu... pick a combo:"
+    else
+       echo "Lunch menu... pick a combo:"
+    fi
 
     local i=1
     local choice
@@ -480,8 +511,55 @@ function print_lunch_menu()
         i=$(($i+1))
     done | column
 
+    if [ "z${CM_DEVICES_ONLY}" != "z" ]; then
+       echo "... and don't forget the bacon!"
+    fi
+
     echo
 }
+
+function brunch()
+{
+    breakfast $*
+    if [ $? -eq 0 ]; then
+        mka bacon
+    else
+        echo "No such item in brunch menu. Try 'breakfast'"
+        return 1
+    fi
+    return $?
+}
+
+function breakfast()
+{
+    target=$1
+    CM_DEVICES_ONLY="true"
+    unset LUNCH_MENU_CHOICES
+    add_lunch_combo full-eng
+    for f in `/bin/ls vendor/cm/vendorsetup.sh 2> /dev/null`
+        do
+            echo "including $f"
+            . $f
+        done
+    unset f
+
+    if [ $# -eq 0 ]; then
+        # No arguments, so let's have the full menu
+        lunch
+    else
+        echo "z$target" | grep -q "-"
+        if [ $? -eq 0 ]; then
+            # A buildtype was specified, assume a full device name
+            lunch $target
+        else
+            # This is probably just the CM model name
+            lunch cm_$target-userdebug
+        fi
+    fi
+    return $?
+}
+
+alias bib=breakfast
 
 function lunch()
 {
@@ -522,6 +600,17 @@ function lunch()
 
     local product=$(echo -n $selection | sed -e "s/-.*$//")
     check_product $product
+    if [ $? -ne 0 ]
+    then
+        # if we can't find a product, try to grab it off the CM github
+        T=$(gettop)
+        pushd $T > /dev/null
+        build/tools/roomservice.py $product
+        popd > /dev/null
+        check_product $product
+    else
+        build/tools/roomservice.py $product true
+    fi
     if [ $? -ne 0 ]
     then
         echo
@@ -610,6 +699,57 @@ function tapas()
     printconfig
 }
 
+function eat()
+{
+    if [ "$OUT" ] ; then
+        MODVERSION=$(get_build_var CM_VERSION)
+        ZIPFILE=cm-$MODVERSION.zip
+        ZIPPATH=$OUT/$ZIPFILE
+        if [ ! -f $ZIPPATH ] ; then
+            echo "Nothing to eat"
+            return 1
+        fi
+        adb start-server # Prevent unexpected starting server message from adb get-state in the next line
+        if [ $(adb get-state) != device -a $(adb shell busybox test -e /sbin/recovery 2> /dev/null; echo $?) != 0 ] ; then
+            echo "No device is online. Waiting for one..."
+            echo "Please connect USB and/or enable USB debugging"
+            until [ $(adb get-state) = device -o $(adb shell busybox test -e /sbin/recovery 2> /dev/null; echo $?) = 0 ];do
+                sleep 1
+            done
+            echo "Device Found.."
+        fi
+    if (adb shell cat /system/build.prop | grep -q "ro.cm.device=$CM_BUILD");
+    then
+        # if adbd isn't root we can't write to /cache/recovery/
+        adb root
+        sleep 1
+        adb wait-for-device
+        cat << EOF > /tmp/command
+--sideload
+EOF
+        if adb push /tmp/command /cache/recovery/ ; then
+            echo "Rebooting into recovery for sideload installation"
+            adb reboot recovery
+            adb wait-for-sideload
+            adb sideload $ZIPPATH
+        fi
+        rm /tmp/command
+    else
+        echo "Nothing to eat"
+        return 1
+    fi
+    return $?
+    else
+        echo "The connected device does not appear to be $CM_BUILD, run away!"
+    fi
+}
+
+function omnom
+{
+    brunch $*
+    eat
+}
+
 function gettop
 {
     local TOPFILE=build/core/envsetup.mk
@@ -665,10 +805,17 @@ function findmakefile()
 
 function mm()
 {
+    local MM_MAKE=make
+    local ARG=
+    for ARG in $@ ; do
+        if [ "$ARG" = mka ]; then
+            MM_MAKE=mka
+        fi
+    done
     # If we're sitting in the root of the build tree, just do a
     # normal make.
     if [ -f build/core/envsetup.mk -a -f Makefile ]; then
-        make $@
+        $MM_MAKE $@
     else
         # Find the closest Android.mk file.
         T=$(gettop)
@@ -680,13 +827,14 @@ function mm()
         elif [ ! "$M" ]; then
             echo "Couldn't locate a makefile from the current directory."
         else
-            ONE_SHOT_MAKEFILE=$M make -C $T -f build/core/main.mk all_modules $@
+            ONE_SHOT_MAKEFILE=$M $MM_MAKE -C $T -f build/core/main.mk all_modules $@
         fi
     fi
 }
 
 function mmm()
 {
+    local MMM_MAKE=make
     T=$(gettop)
     if [ "$T" ]; then
         local MAKEFILE=
@@ -721,13 +869,15 @@ function mmm()
                     ARGS="$ARGS dist"
                 elif [ "$DIR" = incrementaljavac ]; then
                     ARGS="$ARGS incrementaljavac"
+                elif [ "$DIR" = mka ]; then
+                    MMM_MAKE=mka
                 else
                     echo "No Android.mk in $DIR."
                     return 1
                 fi
             fi
         done
-        ONE_SHOT_MAKEFILE="$MAKEFILE" make -C $T -f build/core/main.mk $DASH_ARGS $MODULES $ARGS
+        ONE_SHOT_MAKEFILE="$MAKEFILE" $MMM_MAKE -C $T -f build/core/main.mk $DASH_ARGS $MODULES $ARGS
     else
         echo "Couldn't locate the top of the tree.  Try setting TOP."
     fi
@@ -789,6 +939,15 @@ function croot()
         \cd $(gettop)
     else
         echo "Couldn't locate the top of the tree.  Try setting TOP."
+    fi
+}
+
+function cout()
+{
+    if [  "$OUT" ]; then
+        cd $OUT
+    else
+        echo "Couldn't locate out directory.  Try setting OUT."
     fi
 }
 
@@ -1376,7 +1535,6 @@ fi
 return $retval
 }
 
-
 function cmka() {
     if [ ! -z "$1" ]; then
         for i in "$@"; do
@@ -1433,8 +1591,9 @@ function dopush()
         # Get target file name (i.e. system/bin/adb)
         TARGET=$(echo $FILE | sed "s#$OUT/##")
 
-        # Don't send files that are not in /system.
-        if ! echo $TARGET | egrep '^system\/' > /dev/null ; then
+        # Don't send files that are not under /system or /data
+        if [ ! "echo $TARGET | egrep '^system\/' > /dev/null" -o \
+               "echo $TARGET | egrep '^data\/' > /dev/null" ] ; then
             continue
         else
             case $TARGET in
@@ -1586,6 +1745,7 @@ fi
 
 # Execute the contents of any vendorsetup.sh files we can find.
 for f in `/bin/ls vendor/*/vendorsetup.sh vendor/*/*/vendorsetup.sh device/*/*/vendorsetup.sh 2> /dev/null`
+
 do
     echo "including $f"
     . $f
@@ -1601,3 +1761,5 @@ source $(gettop)/build/nukehawtness
 if [ `typeset -F | grep _git | wc -l` -eq 0 ]; then
     source $(gettop)/build/git-completion.bash
 fi
+
+export ANDROID_BUILD_TOP=$(gettop)
