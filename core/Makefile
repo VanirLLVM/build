@@ -379,13 +379,22 @@ INTERNAL_RAMDISK_FILES := $(filter $(TARGET_ROOT_OUT)/%, \
 	$(ALL_GENERATED_SOURCES) \
 	$(ALL_DEFAULT_INSTALLED_MODULES))
 
-BUILT_RAMDISK_TARGET := $(PRODUCT_OUT)/ramdisk.img
+ifeq ($(TARGET_BOOTLOADER_TYPE),uboot)
+BUILT_RAMDISK_TARGET := $(PRODUCT_OUT)/uInitrd
+else
+BUILT_RAMDISK_TARGET := $(PRODUCT_OUT)/$(or $(INSTALLED_RAMDISK_TARGET_NAME),ramdisk.img)
+endif
 
 # We just build this directly to the install location.
 INSTALLED_RAMDISK_TARGET := $(BUILT_RAMDISK_TARGET)
 $(INSTALLED_RAMDISK_TARGET): $(MKBOOTFS) $(INTERNAL_RAMDISK_FILES) | $(MINIGZIP)
 	$(call pretty,"Target ram disk: $@")
+ifeq ($(TARGET_BOOTLOADER_TYPE),uboot)
+	$(hide) $(MKBOOTFS) $(TARGET_ROOT_OUT) | $(MINIGZIP) > $(PRODUCT_OUT)/obj/ramdisk.img
+	mkimage -A arm -O linux -T ramdisk -n "Android Ramdisk Image" -d $(PRODUCT_OUT)/obj/ramdisk.img $@
+else
 	$(hide) $(MKBOOTFS) $(TARGET_ROOT_OUT) | $(MINIGZIP) > $@
+endif
 
 
 ifneq ($(strip $(TARGET_NO_KERNEL)),true)
@@ -394,6 +403,7 @@ ifneq ($(strip $(TARGET_NO_KERNEL)),true)
 # the boot image, which is a collection of other images.
 INTERNAL_BOOTIMAGE_ARGS := \
 	$(addprefix --second ,$(INSTALLED_2NDBOOTLOADER_TARGET)) \
+	$(addprefix --dt ,$(INSTALLED_DTB_TARGET)) \
 	--kernel $(INSTALLED_KERNEL_TARGET) \
 	--ramdisk $(INSTALLED_RAMDISK_TARGET)
 
@@ -407,6 +417,11 @@ endif
 BOARD_KERNEL_BASE := $(strip $(BOARD_KERNEL_BASE))
 ifdef BOARD_KERNEL_BASE
   INTERNAL_BOOTIMAGE_ARGS += --base $(BOARD_KERNEL_BASE)
+endif
+
+TARGET_TAG_ADDRESS := $(strip $(TARGET_TAG_ADDRESS))
+ifdef TARGET_TAG_ADDRESS
+  INTERNAL_BOOTIMAGE_ARGS += --tags-addr $(TARGET_TAG_ADDRESS)
 endif
 
 BOARD_KERNEL_PAGESIZE := $(strip $(BOARD_KERNEL_PAGESIZE))
@@ -424,14 +439,14 @@ ifeq ($(TARGET_BOOTIMAGE_USE_EXT2),true)
 tmp_dir_for_image := $(call intermediates-dir-for,EXECUTABLES,boot_img)/bootimg
 INTERNAL_BOOTIMAGE_ARGS += --tmpdir $(tmp_dir_for_image)
 INTERNAL_BOOTIMAGE_ARGS += --genext2fs $(MKEXT2IMG)
-$(INSTALLED_BOOTIMAGE_TARGET): $(MKEXT2IMG) $(INTERNAL_BOOTIMAGE_FILES)
+$(INSTALLED_BOOTIMAGE_TARGET): $(MKEXT2IMG) $(INTERNAL_BOOTIMAGE_FILES) $(INSTALLED_KERNEL_TARGET)
 	$(call pretty,"Target boot image: $@")
 	$(hide) $(MKEXT2BOOTIMG) $(INTERNAL_BOOTIMAGE_ARGS) --output $@
 	@echo -e ${CL_CYN}"Made boot image: $@"${CL_RST}
 
 else ifndef BOARD_CUSTOM_BOOTIMG_MK # TARGET_BOOTIMAGE_USE_EXT2 != true
 
-$(INSTALLED_BOOTIMAGE_TARGET): $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_FILES)
+$(INSTALLED_BOOTIMAGE_TARGET): $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_FILES) $(INSTALLED_KERNEL_TARGET)
 	$(call pretty,"Target boot image: $@")
 	$(hide) $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_ARGS) $(BOARD_MKBOOTIMG_ARGS) --output $@
 	$(hide) $(call assert-max-image-size,$@,$(BOARD_BOOTIMAGE_PARTITION_SIZE),raw)
@@ -830,7 +845,16 @@ ifdef is_tests_build
 #    $(tests_MODULES))
 endif
 
-FULL_SYSTEMIMAGE_DEPS := $(INTERNAL_SYSTEMIMAGE_FILES) $(INTERNAL_USERIMAGES_DEPS)
+# FIXME The ifneq ... construct below is a workaround for a bug in the
+# version of make currently (2013/02) installed on android-build.
+# On android-build, even if native-toolchain is present, gcc gets built
+# after system.img, causing it to be missing.
+# Local builds with make 3.82 work fine without this hack.
+ifneq ($(findstring developer,-$(LINARO_BUILD_SPEC)),)
+INTERNAL_SYSTEMIMAGE_FILES += $(PRODUCT_OUT)/system/bin/gcc
+endif
+FULL_SYSTEMIMAGE_DEPS := $(INTERNAL_SYSTEMIMAGE_FILES) \
+	$(INTERNAL_USERIMAGES_DEPS)
 # -----------------------------------------------------------------
 # installed file list
 # Depending on anything that $(BUILT_SYSTEMIMAGE) depends on.
@@ -1744,6 +1768,7 @@ $(INTERNAL_FINDBUGS_HTML_TARGET): $(INTERNAL_FINDBUGS_XML_TARGET)
 include $(sort $(wildcard $(BUILD_SYSTEM)/tasks/*.mk))
 -include $(sort $(wildcard vendor/*/build/tasks/*.mk))
 -include $(sort $(wildcard device/*/build/tasks/*.mk))
+-include $(sort $(wildcard device/*/common/tasks/*.mk))
 
 # -----------------------------------------------------------------
 # Create SDK repository packages. Must be done after tasks/* since
