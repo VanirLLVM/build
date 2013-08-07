@@ -70,6 +70,7 @@ ifeq ($(TARGET_ARCH_VARIANT_CPU), cortex-a5)
 ARCH_ARM_HAVE_NEON_UNALIGNED_ACCESS    := true
 ARCH_ARM_NEON_MEMSET_DIVIDER           := 132
 ARCH_ARM_NEON_MEMCPY_ALIGNMENT_DIVIDER := 224
+endif
 
 ifneq (,$(findstring cpu=cortex-a9,$(TARGET_EXTRA_CFLAGS)))
 arch_variant_ldflags := \
