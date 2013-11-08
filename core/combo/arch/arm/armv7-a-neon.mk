@@ -17,6 +17,9 @@ else
 ifeq ($(strip $(TARGET_CPU_VARIANT)),cortex-a9)
 	cpu_for_optimizations := cortex-a9
 else
+ifeq ($(strip $(TARGET_CPU_VARIANT)),cortex-a8)
+	arch_variant_cflags := -mcpu=cortex-a8
+else
 ifeq ($(strip $(TARGET_CPU_VARIANT)),cortex-a7)
 	cpu_for_optimizations := cortex-a7
 else
@@ -46,6 +49,7 @@ arch_variant_cflags := \
 else
 arch_variant_cflags := \
 	-march=armv7-a
+endif
 endif
 
 ifeq ($(strip $(TARGET_ARCH_VARIANT_FPU)),)

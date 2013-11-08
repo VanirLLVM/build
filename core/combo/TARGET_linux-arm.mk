@@ -127,6 +127,8 @@ else
    PIE_EXECUTABLE_TRANSFORM := -fPIE -pie
 endif
 
+android_config_h := $(call select-android-config-h,linux-arm)
+
 TARGET_GLOBAL_CFLAGS += \
 			-msoft-float -fpic $(PIE_GLOBAL_CFLAGS) \
 			-ffunction-sections \
@@ -137,10 +139,10 @@ TARGET_GLOBAL_CFLAGS += \
 			-Werror=format-security \
 			-D_FORTIFY_SOURCE=0 \
 			-fno-short-enums \
-			$(arch_variant_cflags) $(STRICT_ALIASING_WARNINGS) # -pipe
+			$(arch_variant_cflags) $(STRICT_ALIASING_WARNINGS) # -pipe \
+			-include $(android_config_h) \
+			-I $(dir $(android_config_h))
 
-android_config_h := $(call select-android-config-h,linux-arm)
-TARGET_ANDROID_CONFIG_CFLAGS := -include $(android_config_h) -I $(dir $(android_config_h))
 TARGET_GLOBAL_CFLAGS += $(TARGET_ANDROID_CONFIG_CFLAGS)
 
 # This warning causes dalvik not to build with gcc 4.6+ and -Werror.
