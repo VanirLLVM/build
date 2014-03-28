@@ -39,6 +39,12 @@ ifeq ($(strip $(TARGET_GCC_VERSION)),)
 TARGET_GCC_VERSION := 4.8
 endif
 
+# default target clang version
+ifeq ($(strip $(TARGET_CLANG_VERSION)),)
+FORCE_BUILD_LLVM_COMPONENTS := true
+endif
+
+
 TARGET_ARCH_SPECIFIC_MAKEFILE := $(BUILD_COMBOS)/arch/$(TARGET_ARCH)/$(TARGET_ARCH_VARIANT).mk
 ifeq ($(strip $(wildcard $(TARGET_ARCH_SPECIFIC_MAKEFILE))),)
 $(error Unknown ARM architecture version: $(TARGET_ARCH_VARIANT))
